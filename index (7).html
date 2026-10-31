@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FMA Soup Kernels</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Roboto:wght@400;500&family=Roboto+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  /* one deliberate dark look; chart colors follow matplotlib's dark_background cycle */
+  color-scheme:dark;
+  --bg:#0F0F10;--bg2:#1A1A1C;--bg3:#262629;--ink:#F4F4F2;--ink2:#C9C9C4;--muted:#8E8E89;--line:#333336;
+  --teal:#8DD3C7;--yel:#FEFFB3;--lav:#BFBBD9;--sal:#FA8174;--blu:#81B1D2;--ora:#FDB462;--grn:#B3DE69;--pur:#BC82BD;
+  --fd:"Montserrat",system-ui,sans-serif;--fc:"Roboto",Arial,sans-serif;--fm:"Roboto Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{height:100%}
+body{height:100%;margin:0;overflow:hidden;background:#000;color:var(--ink);font-family:var(--fd);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0;-webkit-font-smoothing:antialiased}
+#fit{position:relative;width:100%;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:calc(50% - 14px);width:1600px;height:900px;transform:translate(-50%,-50%) scale(var(--s,.5));overflow:hidden;background:var(--bg);cursor:pointer;user-select:none;-webkit-user-select:none}
+.hint{position:absolute;left:0;right:0;bottom:calc(6px + env(safe-area-inset-bottom,0px));text-align:center;font:500 12px/1.3 var(--fd);color:#77736C}
+#rot{display:none}
+@media (max-width:700px) and (orientation:portrait){.hint{display:none}#rot{display:block;position:absolute;left:0;right:0;bottom:calc(24px + env(safe-area-inset-bottom,0px));text-align:center;font:500 14px/1.4 var(--fd);color:#8E8E89}}
+p,h1,h2,h3,figure{margin:0}
+code{font-family:var(--fm);font-size:.9em}
+.num{font-variant-numeric:tabular-nums}
+.teal{color:var(--teal)}.sal{color:var(--sal)}.ora{color:var(--ora)}.mut{color:var(--muted)}
+
+/* slides */
+.brand{position:absolute;left:96px;top:44px;font:600 15px/1 var(--fd);color:var(--muted);z-index:4}
+.pg{position:absolute;right:96px;bottom:40px;font:600 15px/1 var(--fd);color:var(--muted);z-index:4}
+.slide{position:absolute;inset:0;padding:112px 96px 100px;opacity:0;visibility:hidden;transform:translateX(60px);transition:opacity .5s ease,transform .6s cubic-bezier(.2,.8,.2,1),visibility 0s linear .6s}
+.slide.on{opacity:1;visibility:visible;transform:none;transition:opacity .5s ease,transform .6s cubic-bezier(.2,.8,.2,1)}
+.slide.gone{transform:translateX(-60px)}
+.slide .r{opacity:0;transform:translateY(26px)}
+.slide.on .r{animation:rise .8s cubic-bezier(.16,.8,.24,1) forwards;animation-delay:calc(var(--d,0) * 120ms + 150ms)}
+@keyframes rise{to{opacity:1;transform:none}}
+h2{font:800 52px/1.08 var(--fd);letter-spacing:-.02em;max-width:1300px}
+#mHead{transition:opacity .25s}
+.b{opacity:0;transition:opacity .5s ease}
+.b.shown{opacity:1}
+
+/* 1 · start */
+.s1{display:flex;flex-direction:column;justify-content:center;gap:24px}
+.kick{font:500 21px/1.3 var(--fd);color:var(--muted)}
+.hero{display:flex;align-items:baseline;gap:24px}
+.hnum{font:800 240px/.86 var(--fd);letter-spacing:-.05em;color:var(--sal);transition:color .9s}
+.hnum.done{color:var(--teal)}
+.hunit{font:700 62px/1 var(--fd)}
+.vr{width:1080px;display:flex;flex-direction:column;gap:12px}
+.vtrack{height:14px;border-radius:7px;background:var(--bg3);overflow:hidden}
+.vtrack i{display:block;height:100%;width:93.4%;border-radius:7px;background:var(--sal);transition:background .9s}
+.vtrack i.done{background:var(--teal)}
+.vcap{display:flex;justify-content:space-between;font:500 18px/1.3 var(--fd);color:var(--muted)}
+.facts{display:flex;gap:84px;margin-top:14px}
+.facts b{display:block;font:800 48px/1 var(--fd);letter-spacing:-.02em}
+.facts span{display:block;margin-top:10px;font:500 19px/1.3 var(--fd);color:var(--ink2)}
+.stk{position:absolute;right:120px;top:170px;z-index:3;touch-action:none;cursor:grab}
+.note{background:var(--yel);color:#1A1A1A;font:800 30px/1.1 var(--fd);padding:24px 26px 26px;width:330px;transform:rotate(5deg);box-shadow:0 14px 34px rgba(0,0,0,.55)}
+.slide.on .note{animation:slap .9s cubic-bezier(.2,1.5,.35,1) 1.2s both}
+@keyframes slap{0%{opacity:0;transform:rotate(-22deg) scale(1.6)}55%{opacity:1}100%{opacity:1;transform:rotate(5deg) scale(1)}}
+.team{position:absolute;left:96px;bottom:40px;font:500 16px/1.4 var(--fd);color:var(--muted)}
+
+/* 2 · memory */
+.s2{display:flex;flex-direction:column;gap:30px}
+.s2-top{display:flex;justify-content:space-between;align-items:flex-end;gap:40px}
+.mtot{text-align:right;flex:none}
+.mtot b{display:block;font:800 96px/.9 var(--fd);letter-spacing:-.045em;color:var(--sal);transition:color .7s}
+.s2.ours .mtot b{color:var(--teal)}
+.mtot span{display:block;margin-top:10px;font:500 18px/1 var(--fd);color:var(--muted)}
+.mwrap{display:flex;flex-direction:column;gap:10px}
+.mbar{height:124px;border-radius:10px;background:var(--bg2);display:flex;overflow:hidden;box-shadow:inset 0 0 0 1px var(--line)}
+.seg{display:block;height:100%;width:0;flex:none;transition:width 1.1s cubic-bezier(.75,0,.2,1);transition-delay:calc(var(--i,0) * 90ms);box-shadow:inset -3px 0 0 var(--bg)}
+.mscale{position:relative;height:16px;font:500 14px/1 var(--fc);color:var(--muted)}
+.mscale span{position:absolute;top:0}
+.mlist{display:grid;grid-template-columns:1fr 1fr;gap:22px 64px}
+.mi{display:grid;grid-template-columns:16px 168px 96px 1fr;gap:14px;align-items:baseline}
+.mi i{width:14px;height:14px;border-radius:3px;align-self:center}
+.mi b{font:700 21px/1.2 var(--fd)}
+.mi .sz{font:700 19px/1 var(--fd);transition:color .4s}
+.s2.ours .mi .sz{color:var(--muted);text-decoration:line-through;text-decoration-thickness:2px}
+.s2.ours .mi.keep .sz{color:var(--teal);text-decoration:none}
+.mi .tx{display:grid;font:500 18px/1.38 var(--fd);color:var(--ink2)}
+.mi .tx span{grid-area:1/1;transition:opacity .45s,transform .45s;transition-delay:calc(var(--i,0) * 90ms + 250ms)}
+.mi .tx .now{opacity:0;transform:translateY(10px);color:var(--ink)}
+.s2.ours .mi .tx .was{opacity:0;transform:translateY(-10px)}
+.s2.ours .mi .tx .now{opacity:1;transform:none}
+.foot{font:500 16px/1.4 var(--fd);color:var(--muted)}
+
+/* 3 · how, 4 · kernel */
+.s3{display:flex;flex-direction:column;gap:20px}
+.sub{font:500 21px/1.45 var(--fd);color:var(--ink2);max-width:1040px}
+canvas{display:block;width:100%}
+.s4{display:flex;flex-direction:column;gap:26px}
+.kgrid{display:grid;grid-template-columns:800px 1fr;gap:44px;flex:1;min-height:0}
+.code{background:#161B22;border:1px solid #30363D;border-radius:10px;padding:14px 0 16px;font:400 15.5px/1.75 var(--fm);color:#E6EDF3;align-self:start}
+.code .cap{padding:0 22px 10px;margin-bottom:6px;border-bottom:1px solid #30363D;font:500 14px/1.4 var(--fd);color:#8B949E}
+.ln{display:block;white-space:pre;padding-right:16px;border-left:3px solid transparent;transition:background .25s,border-color .25s}
+.ln .no{display:inline-block;width:54px;text-align:right;padding-right:18px;color:#6E7681}
+.ln.hl{background:rgba(253,180,98,.14);border-left-color:var(--ora)}
+.ln .k{color:#FF7B72}.ln .f{color:#D2A8FF}.ln .n{color:#79C0FF}.ln .s{color:#A5D6FF}
+.kside{display:flex;flex-direction:column;gap:16px;min-width:0}
+.kread{font:500 17px/1.5 var(--fm);color:var(--ink);min-height:54px}
+.kread .mut{font-family:var(--fd);font-size:15px}
+.knote{font:500 18px/1.45 var(--fd);color:var(--ink2)}
+.knote b{color:var(--ink);font-weight:700}
+
+/* 5 · results, 6 · quality */
+.rgrid{display:grid;grid-template-columns:840px 1fr;gap:56px;align-items:start}
+.big{display:flex;flex-direction:column;gap:26px;padding-top:6px}
+.big div b{display:block;font:800 76px/1 var(--fd);letter-spacing:-.04em}
+.big div span{display:block;margin-top:8px;font:500 18px/1.35 var(--fd);color:var(--ink2)}
+.cap2{font:500 15px/1.4 var(--fd);color:var(--muted);margin-top:8px}
+.qgrid{display:grid;grid-template-columns:900px 1fr;gap:56px;align-items:start}
+.spine{fill:none;stroke:#fff;stroke-width:.9}
+.tick{stroke:#fff;stroke-width:.9}
+.grid{stroke:#4A4A4E;stroke-width:.8;stroke-dasharray:3 4}
+.tl{font:400 14px var(--fc);fill:#fff}
+.al{font:400 15px var(--fc);fill:#fff}
+.vl{font:500 12.5px var(--fc);fill:#fff}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.bar{transform-box:fill-box;transform-origin:50% 100%;transform:scaleY(0);transition:transform .9s cubic-bezier(.3,.7,.3,1)}
+.on .bar{transform:none}
+.lag{opacity:0;transition:opacity .5s ease}
+.on .lag{opacity:1}
+.ln2{fill:none;stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 2s ease}
+.on .ln2{stroke-dashoffset:0}
+
+/* 6 · three profiles */
+.pg3{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line);margin-top:4px}
+.pc{position:relative;padding:30px 40px 6px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:12px}
+.pc:first-child{border-left:0;padding-left:0}
+.pc::before{content:"";position:absolute;left:0;right:0;top:-1px;height:4px;background:var(--c);transform:scaleX(0);transform-origin:left;transition:transform .8s cubic-bezier(.2,.8,.2,1) .3s}
+.on .pc::before{transform:none}
+.pc h3{font:800 30px/1 var(--fd);color:var(--c);display:flex;align-items:center;gap:14px}
+.tag{font:800 14px/1 var(--fd);background:var(--yel);color:#1A1A1A;padding:6px 10px;transform:rotate(-3deg)}
+.pn{display:flex;align-items:baseline;gap:12px}
+.pn b{font:800 66px/1 var(--fd);letter-spacing:-.04em}
+.pn.sm b{font-size:50px}
+.pn span{font:500 18px/1.2 var(--fd);color:var(--ink2)}
+.pb{height:10px;border-radius:5px;background:var(--bg3);overflow:hidden}
+.pb i{display:block;height:100%;width:0;border-radius:5px;background:var(--c);transition:width 1.2s cubic-bezier(.2,.8,.2,1) .5s}
+.on .pb i{width:var(--w)}
+.pcap{font:500 15px/1.3 var(--fd);color:var(--muted);margin-top:-4px}
+.pl{font:600 17px/1.4 var(--fd);color:var(--ink)}
+.pd{font:500 17px/1.45 var(--fd);color:var(--ink2)}
+.why{font:500 18px/1.5 var(--fd);color:var(--ink2);margin-top:28px;max-width:1350px}
+.why b{color:var(--ink)}
+
+/* 7 · limits */
+.s7{display:flex;flex-direction:column;gap:34px}
+.tl7{display:flex;height:84px;border-radius:10px;overflow:hidden;background:var(--bg2)}
+.tl7 div{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:0 18px;white-space:nowrap;overflow:hidden;width:0;transition:width 1s cubic-bezier(.2,.8,.2,1)}
+.tl7 b{font:800 24px/1 var(--fd)}.tl7 small{font:600 15px/1.1 var(--fd)}
+.tl7 .tr{background:var(--teal);color:#102A26}
+.tl7 .ot{background:var(--bg3);color:var(--ink2);transition-delay:.3s}
+.on .tl7 .tr{width:58.1%}.on .tl7 .ot{width:41.9%}
+.tcap{display:flex;justify-content:space-between;gap:20px;font:500 17px/1.35 var(--fd);color:var(--ink2);margin-top:12px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:64px}
+.cols h3{font:800 24px/1.2 var(--fd);margin-bottom:14px}
+.cols ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px}
+.cols li{position:relative;padding-left:26px;font:500 19px/1.45 var(--fd);color:var(--ink2)}
+.cols li::before{content:"";position:absolute;left:0;top:11px;width:12px;height:3px;background:var(--muted)}
+.end{display:flex;justify-content:space-between;align-items:flex-end;gap:40px;margin-top:auto}
+.links{display:flex;gap:28px;font:600 17px/1.4 var(--fd)}
+.links a{color:var(--ink);text-decoration:none;border-bottom:2px solid var(--line)}
+.links a:hover{border-bottom-color:var(--teal)}
+.thanks{font:800 84px/1 var(--fd);letter-spacing:-.03em;color:var(--teal)}
+
+@media (prefers-reduced-motion: reduce){
+  .slide,.slide .r,.seg,.mi .tx span,.bar,.lag,.ln2,.tl7 div,.ln{transition:none!important;animation:none!important}
+  .slide .r{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<div id="fit"><div id="stage">
+<div class="brand">FMA · Soup Kernel Challenge</div>
+<div class="pg" id="pg">1 / 7</div>
+
+<!-- 1 -->
+<section class="slide s1" data-id="start" data-steps="0" data-title="Титул">
+  <p class="kick r">Decentrathon 6.0 · Soup Kernel Challenge · Kaggle T4</p>
+  <div class="hero r" style="--d:1"><span class="hnum num" id="hNum">14 345</span><span class="hunit">МиБ</span></div>
+  <div class="vr r" style="--d:2">
+    <div class="vtrack"><i id="hBar"></i></div>
+    <div class="vcap"><span>пик памяти видеокарты за весь <code>soup train</code></span><span>у базы было 14 345 из 15 360</span></div>
+  </div>
+  <div class="facts r" style="--d:3">
+    <div><b class="num">57 с</b><span>вместо 86 у базы</span></div>
+    <div><b class="num">2,04964</b><span>eval loss, у базы 2,04963</span></div>
+  </div>
+  <div class="stk" id="stk"><div class="note">FMA, please, I’m begging you, hire me!!!</div></div>
+</section>
+
+<!-- 2 -->
+<section class="slide s2" data-id="memory" data-steps="1" data-title="Память">
+  <div class="s2-top">
+    <h2 class="r"><span id="mHead">Сколько памяти занимала база</span></h2>
+    <div class="mtot r" style="--d:1"><b class="num" id="mTot">14 345</b><span>МиБ в пике</span></div>
+  </div>
+  <div class="mwrap r" style="--d:2">
+    <div class="mbar" role="img" aria-label="Память видеокарты T4: что занимала база и что осталось после наших изменений">
+      <i class="seg keep" data-v="857" style="background:var(--teal)"></i>
+      <i class="seg" data-v="5262" style="--i:1;background:var(--sal)"></i>
+      <i class="seg" data-v="3940" style="--i:2;background:var(--ora)"></i>
+      <i class="seg" data-v="2482" style="--i:3;background:var(--lav)"></i>
+      <i class="seg" data-v="904" style="--i:4;background:var(--blu)"></i>
+      <i class="seg" data-v="900" style="--i:5;background:var(--pur)"></i>
+    </div>
+    <div class="mscale"><span style="left:0">0</span><span style="left:32.55%;transform:translateX(-50%)">5 000</span><span style="left:65.1%;transform:translateX(-50%)">10 000</span><span style="right:0">15 360 МиБ</span></div>
+  </div>
+  <div class="mlist r" style="--d:3">
+    <div class="mi" style="--i:1"><i style="background:var(--sal)"></i><b>MLP</b><span class="sz num">5,3 ГБ</span><span class="tx"><span class="was">промежуточные результаты в fp32</span><span class="now">свой SwiGLU, fp16, пересчёт при обратном проходе</span></span></div>
+    <div class="mi" style="--i:2"><i style="background:var(--ora)"></i><b>Словарь</b><span class="sz num">3,9 ГБ</span><span class="tx"><span class="was">логиты 4 × 512 × 151 936 и их копии в fp32</span><span class="now">один проход по частям, логитов целиком нет</span></span></div>
+    <div class="mi" style="--i:3"><i style="background:var(--lav)"></i><b>Активации</b><span class="sz num">2,5 ГБ</span><span class="tx"><span class="was">всё промежуточное 28 слоёв ждёт обратного прохода</span><span class="now">слой хранит только вход и пересчитывается</span></span></div>
+    <div class="mi" style="--i:4"><i style="background:var(--blu)"></i><b>Веса</b><span class="sz num">0,9 ГБ</span><span class="tx"><span class="was">веса, словарь и резерв при загрузке на видеокарте</span><span class="now">лежат в памяти процессора, едут по слою</span></span></div>
+    <div class="mi" style="--i:5"><i style="background:var(--pur)"></i><b>Эмбеддинг</b><span class="sz num">0,9 ГБ</span><span class="tx"><span class="was">таблица слов поднята в fp32</span><span class="now">остаётся в fp16, строки читает наш кернел</span></span></div>
+    <div class="mi keep" style="--i:6"><i style="background:var(--teal)"></i><b>Остаётся</b><span class="sz num">857 МиБ</span><span class="tx"><span class="was">контекст CUDA, LoRA и всё остальное</span><span class="now">контекст CUDA, входы слоёв, 3 слота весов</span></span></div>
+  </div>
+  <p class="foot r" style="--d:4">Пик по nvidia-smi на Kaggle T4. Каждое изменение мерили отдельным запуском.</p>
+</section>
+
+<!-- 3 -->
+<section class="slide s3" data-id="how" data-steps="2" data-title="Как уместились">
+  <h2 class="r">Как мы уместились в 857 МиБ</h2>
+  <p class="sub r" style="--d:1">Видеокарта — это стол, память процессора — склад. Веса и словарь лежат на складе. На стол попадает только слой, который считается сейчас, и кусок словаря. От каждого слоя на столе остаётся только его вход.</p>
+  <canvas id="cvHow" height="470" class="r" style="--d:2" aria-label="Анимация шага обучения: слои едут со склада в три слота на видеокарте, словарь идёт частями через два буфера, при обратном проходе слои пересчитываются"></canvas>
+</section>
+
+<!-- 4 -->
+<section class="slide s4" data-id="kernel" data-steps="0" data-title="Кернел">
+  <h2 class="r">Наш кернел головы модели</h2>
+  <div class="kgrid">
+    <div class="code r" style="--d:1">
+      <div class="cap">solution/hostvocab.py · lmhead_chunk_kernel, один токен</div>
+      <div class="ln" data-n="71"><span class="no">71</span><span class="k">for</span> start <span class="k">in</span> <span class="f">range</span>(<span class="n">0</span>, n_cols, BLOCK_V):</div>
+      <div class="ln" data-n="72"><span class="no">72</span>    cols = start + tl.<span class="f">arange</span>(<span class="n">0</span>, BLOCK_V)</div>
+      <div class="ln" data-n="73"><span class="no">73</span>    mask = cols &lt; n_cols</div>
+      <div class="ln" data-n="74"><span class="no">74</span>    x = tl.<span class="f">load</span>(base + cols, mask=mask, other=<span class="f">float</span>(<span class="s">"-inf"</span>)).<span class="f">to</span>(tl.float32)</div>
+      <div class="ln" data-n="75"><span class="no">75</span>    block_max = tl.<span class="f">max</span>(x, axis=<span class="n">0</span>)</div>
+      <div class="ln" data-n="76"><span class="no">76</span>    block_arg = tl.<span class="f">argmax</span>(x, axis=<span class="n">0</span>)</div>
+      <div class="ln" data-n="77"><span class="no">77</span>    new_m = tl.<span class="f">maximum</span>(m, block_max)</div>
+      <div class="ln" data-n="78"><span class="no">78</span>    rescale = tl.<span class="f">exp</span>(m - new_m)</div>
+      <div class="ln" data-n="79"><span class="no">79</span>    p = tl.<span class="f">exp</span>(x - new_m)</div>
+      <div class="ln" data-n="80"><span class="no">80</span>    s = s * rescale + tl.<span class="f">sum</span>(p, axis=<span class="n">0</span>)</div>
+      <div class="ln" data-n="81"><span class="no">81</span>    t = t * rescale + tl.<span class="f">sum</span>(p * tl.<span class="f">where</span>(mask, x, <span class="n">0.0</span>), axis=<span class="n">0</span>)</div>
+      <div class="ln" data-n="82"><span class="no">82</span>    m = new_m</div>
+      <div class="ln" data-n="83"><span class="no">83</span>    best_idx = tl.<span class="f">where</span>(block_max &gt; best, v0 + start + block_arg, best_idx)</div>
+      <div class="ln" data-n="84"><span class="no">84</span>    best = tl.<span class="f">maximum</span>(best, block_max)</div>
+    </div>
+    <div class="kside r" style="--d:2">
+      <canvas id="cvKer" height="330" aria-label="Логиты одного токена обрабатываются блок за блоком, бегущий максимум и сумма обновляются"></canvas>
+      <div class="kread num" id="kRead"></div>
+      <p class="knote">Вырос максимум — старую сумму домножаем на e<sup>m−m′</sup>, прошлые блоки не пересчитываем. Так же в этом проходе копится и градиент.</p>
+      <p class="knote"><b>Было:</b> 3 копии логитов по 1,2 ГБ. <b>Стало:</b> 2 буфера по 24 МиБ.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-id="results" data-steps="0" data-title="Результаты">
+  <h2 class="r" style="margin-bottom:30px">Что получилось на Kaggle T4</h2>
+  <div class="rgrid">
+    <figure class="r" style="--d:1"><svg id="chMem" viewBox="0 0 840 450" role="img" aria-label="Пик памяти после каждого изменения: от 14 345 до 857 МиБ"></svg>
+      <figcaption class="cap2">Пик памяти после каждого изменения, МиБ. Каждый столбец — отдельный запуск.</figcaption></figure>
+    <div class="big r" style="--d:2">
+      <div><b class="num teal" id="rT">86,0</b><span>секунд на весь <code>soup train</code>, у базы 86,0 · s = 1,50</span></div>
+      <div><b class="num teal" id="rM">14 345</b><span>МиБ в пике, у базы 14 345 · m = 16,74</span></div>
+      <div><b class="num">10 из 10</b><span>проверок <code>check_rules.py</code>, 79 тестов Soup проходят</span></div>
+      <p class="cap2">Это профиль memory, его и сдаём. Все три решения — на следующем слайде.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6 · three profiles -->
+<section class="slide" data-id="profiles" data-steps="0" data-title="Три решения">
+  <h2 class="r" style="margin-bottom:26px">Три решения: память, баланс, скорость</h2>
+  <div class="pg3 r" style="--d:1">
+    <div class="pc" style="--c:var(--teal)">
+      <h3>Память<span class="tag">сдаём</span></h3>
+      <div class="pn"><b class="num" data-from="14345" data-to="857" data-dec="0">857</b><span>МиБ в пике</span></div>
+      <div class="pb"><i style="--w:5.97%"></i></div><p class="pcap">в 16,7 раза меньше базы (14 345)</p>
+      <div class="pn sm"><b class="num" data-from="86.0" data-to="57.3" data-dec="1">57.3</b><span>с, база 86,0</span></div>
+      <div class="pb"><i style="--w:66.6%"></i></div><p class="pcap">в 1,50 раза быстрее</p>
+      <p class="pl">eval loss 2,04963 → 2,04964</p>
+      <p class="pd">Веса и словарь на складе, все 28 слоёв пересчитываются при обратном проходе.</p>
+      <p class="pcap">код в main, включён по умолчанию</p>
+    </div>
+    <div class="pc" style="--c:var(--ora)">
+      <h3>Баланс</h3>
+      <div class="pn"><b class="num" data-from="14345" data-to="1065" data-dec="0">1065</b><span>МиБ в пике</span></div>
+      <div class="pb"><i style="--w:7.42%"></i></div><p class="pcap">в 13,5 раза меньше базы (14 345)</p>
+      <div class="pn sm"><b class="num" data-from="82.0" data-to="55.8" data-dec="1">55.8</b><span>с, база 82,0</span></div>
+      <div class="pb"><i style="--w:68.06%"></i></div><p class="pcap">в 1,47 раза быстрее</p>
+      <p class="pl">eval loss 2,04965 → 2,04961</p>
+      <p class="pd">Склад тот же, последние слои держат на видеокарте до 384 МиБ результатов.</p>
+      <p class="pcap">тот же код, SOUP_PROFILE=balanced</p>
+    </div>
+    <div class="pc" style="--c:var(--blu)">
+      <h3>Скорость</h3>
+      <div class="pn"><b class="num" data-from="14345" data-to="3119" data-dec="0">3119</b><span>МиБ в пике</span></div>
+      <div class="pb"><i style="--w:21.74%"></i></div><p class="pcap">в 4,6 раза меньше базы (14 345)</p>
+      <div class="pn sm"><b class="num" data-from="78.3" data-to="45.3" data-dec="1">45.3</b><span>с, база 78,3</span></div>
+      <div class="pb"><i style="--w:57.78%"></i></div><p class="pcap">в 1,73 раза быстрее</p>
+      <p class="pl">eval loss 2,04967 → 2,04961</p>
+      <p class="pd">Веса на видеокарте, больше результатов сохраняется, меньше пересчётов и пересылок.</p>
+      <p class="pcap">отдельный коммит bf92711</p>
+    </div>
+  </div>
+  <p class="why r" style="--d:2">У каждого своя база в той же сессии Kaggle, все три прошли 10 из 10 проверок, loss не хуже базы. <b>Сдаём «Память»:</b> по формуле конкурса она набирает больше всего баллов почти при любых результатах других команд, а при равных баллах выше команда с меньшей памятью.</p>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-id="quality" data-steps="0" data-title="Качество">
+  <h2 class="r" style="margin-bottom:30px">Качество не просело</h2>
+  <div class="qgrid">
+    <figure class="r" style="--d:1"><svg id="chLoss" viewBox="0 0 900 420" role="img" aria-label="Loss по шагам у базы и у нашего решения почти совпадает"></svg>
+      <figcaption class="cap2">Loss на каждом из 64 шагов, настоящие логи base_1 и solution_1 из runs/result.json.</figcaption></figure>
+    <div class="big r" style="--d:2">
+      <div><b class="num teal">+0,0005%</b><span>eval loss: 2,04964 против 2,04963 у базы. Правила разрешают 0,5%.</span></div>
+      <div><b class="num">0,02%</b><span>разница кривой loss на первом шаге, в среднем по 64 шагам 0,01%</span></div>
+      <div><b>бит в бит</b><span>маска dropout, RoPE и распаковка NF4 совпадают с базой</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide s7" data-id="next" data-steps="0" data-title="Дальше">
+  <h2 class="r">Где упёрлись и что дальше</h2>
+  <div class="r" style="--d:1">
+    <div class="tl7" role="img" aria-label="57,3 секунды: 33,3 на 64 шага обучения и 24,0 на всё остальное"><div class="tr"><b>33,3 с</b><small>64 шага обучения</small></div><div class="ot"><b>24,0 с</b><small>запуск, импорты, загрузка модели, сохранение</small></div></div>
+    <div class="tcap"><span>Из чего состоят 57,3 с нашего запуска</span><span>больше 40% времени уходит до и после обучения</span></div>
+  </div>
+  <div class="cols r" style="--d:2">
+    <div><h3>Что не получилось</h3><ul>
+      <li>До 40 с не дошли: 24 с уходят до и после обучения, это почти не наш код.</li>
+      <li>Пересчёт слоёв экономит память, но стоит около 4 с.</li>
+      <li>Распаковка NF4 всё ещё отдельно от умножения: 7% времени шагов.</li></ul></div>
+    <div><h3>Что дальше</h3><ul>
+      <li>Умножение прямо из 4 бит, без распаковки весов.</li>
+      <li>Одно ядро внимания на весь упакованный батч.</li>
+      <li>Пересчитывать только те слои, что не влезают в память.</li></ul></div>
+  </div>
+  <div class="end r" style="--d:3">
+    <div class="links"><a href="https://github.com/BAITC-Hacks/hack-d2ff10d9-fma-please-i-m-begging-you-hire-me" target="_blank" rel="noopener">GitHub</a><a href="https://www.kaggle.com/code/dian07/soup-three-profiles-t4?scriptVersionId=364196978" target="_blank" rel="noopener">Kaggle</a></div>
+    <p class="thanks">Спасибо!</p>
+  </div>
+</section>
+
+</div>
+<p class="hint">→ или клик — дальше · ← — назад · F — во весь экран</p>
+<p id="rot">Поверните телефон горизонтально</p>
+</div>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const NS = 'http://www.w3.org/2000/svg';
+  const stage = $('#stage'), fitEl = $('#fit');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ru = (x, d = 0) => x.toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const C = { bg2: '#1A1A1C', bg3: '#262629', ink: '#F4F4F2', ink2: '#C9C9C4', mut: '#8E8E89', line: '#333336',
+    teal: '#8DD3C7', tealD: 'rgba(141,211,199,.16)', ora: '#FDB462', oraD: 'rgba(253,180,98,.2)', sal: '#FA8174' };
+  const FD = '"Montserrat", system-ui, sans-serif', FM = '"Roboto Mono", ui-monospace, monospace';
+  let scale = 1;
+  function fit() { scale = Math.max(0.1, Math.min(fitEl.clientWidth / 1600, (fitEl.clientHeight - 28) / 900)); stage.style.setProperty('--s', scale); }
+  addEventListener('resize', fit); fit();
+
+  const easeOut = k => 1 - Math.pow(1 - k, 3), easeInOut = k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+  function tween(from, to, ms, fn, done, ease = easeOut) {
+    if (reduce || ms <= 0) { fn(to); if (done) done(); return () => {}; }
+    const t0 = performance.now(); let raf = 0, live = true;
+    const step = t => { if (!live) return; const k = Math.min(1, (t - t0) / ms); fn(from + (to - from) * ease(k)); if (k < 1) raf = requestAnimationFrame(step); else if (done) done(); };
+    raf = requestAnimationFrame(step); return () => { live = false; cancelAnimationFrame(raf); };
+  }
+  const timers = new Set();
+  function later(fn, ms) { const id = setTimeout(() => { timers.delete(id); fn(); }, ms); timers.add(id); return id; }
+  function clearAll() { timers.forEach(id => clearTimeout(id)); timers.clear(); }
+  function prepCanvas(cv) {
+    const w = cv.clientWidth || cv.parentElement.clientWidth, h = +cv.getAttribute('height'), k = 2;
+    cv.width = Math.round(w * k); cv.height = Math.round(h * k); cv.style.height = h + 'px';
+    const ctx = cv.getContext('2d'); ctx.setTransform(k, 0, 0, k, 0, 0); return { ctx, w, h };
+  }
+  function rr(ctx, x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, Math.max(0, w), h, r); else ctx.rect(x, y, Math.max(0, w), h); }
+  function E(tag, a = {}, p) { const e = document.createElementNS(NS, tag); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; }
+  function T(p, x, y, s, a = {}) { const t = E('text', Object.assign({ x, y }, a), p); t.textContent = s; return t; }
+  function axes(svg, o) {
+    const sx = v => o.x + (v - o.xr[0]) / (o.xr[1] - o.xr[0]) * o.w, sy = v => o.y + o.h - (v - o.yr[0]) / (o.yr[1] - o.yr[0]) * o.h;
+    const g = E('g', {}, svg);
+    if (o.grid) (o.yt || []).forEach(v => E('line', { x1: o.x, x2: o.x + o.w, y1: sy(v), y2: sy(v), class: 'grid' }, g));
+    (o.yt || []).forEach(v => { E('line', { x1: o.x - 5, x2: o.x, y1: sy(v), y2: sy(v), class: 'tick' }, g); T(g, o.x - 9, sy(v) + 5, o.yf ? o.yf(v) : v, { class: 'tl', 'text-anchor': 'end' }); });
+    (o.xt || []).forEach(v => { E('line', { x1: sx(v), x2: sx(v), y1: o.y + o.h, y2: o.y + o.h + 5, class: 'tick' }, g); T(g, sx(v), o.y + o.h + 21, v, { class: 'tl', 'text-anchor': 'middle' }); });
+    if (o.xl) T(g, o.x + o.w / 2, o.y + o.h + 44, o.xl, { class: 'al', 'text-anchor': 'middle' });
+    if (o.yl) T(g, 0, 0, o.yl, { class: 'al', 'text-anchor': 'middle', transform: `translate(${o.x - (o.ylo || 52)},${o.y + o.h / 2}) rotate(-90)` });
+    const front = E('g', {}, svg);
+    E('rect', { x: o.x, y: o.y, width: o.w, height: o.h, class: 'spine' }, svg);
+    return { sx, sy, g: front };
+  }
+  const scenes = {};
+
+  /* 1 · start */
+  scenes.start = {
+    init(s) {
+      const st = $('#stk', s); let sx = 0, sy = 0, ox = 0, oy = 0, drag = false, moved = false;
+      st.addEventListener('pointerdown', e => { drag = true; moved = false; sx = e.clientX; sy = e.clientY; st.setPointerCapture(e.pointerId); e.stopPropagation(); });
+      st.addEventListener('pointermove', e => { if (!drag) return; moved = true; st.style.translate = `${ox + (e.clientX - sx) / scale}px ${oy + (e.clientY - sy) / scale}px`; });
+      const up = e => { if (!drag) return; drag = false; ox += (e.clientX - sx) / scale; oy += (e.clientY - sy) / scale; };
+      st.addEventListener('pointerup', up); st.addEventListener('pointercancel', up);
+      st.addEventListener('click', e => e.stopPropagation());
+    },
+    enter(s) {
+      const n = $('#hNum', s), bar = $('#hBar', s);
+      const set = v => { n.textContent = ru(Math.round(v)); bar.style.width = (v / 15360 * 100) + '%'; };
+      n.classList.remove('done'); bar.classList.remove('done'); set(14345);
+      const fin = () => { n.classList.add('done'); bar.classList.add('done'); };
+      if (reduce) { set(857); fin(); return; }
+      later(() => { this.stop = tween(14345, 857, 2600, set, fin, k => 1 - Math.pow(1 - k, 4)); }, 700);
+    },
+    leave() { if (this.stop) this.stop(); }
+  };
+
+  /* 2 · memory: the base's bar, then everything but 857 MiB collapses */
+  scenes.memory = {
+    init(s) { this.segs = $$('.seg', s); },
+    set(s, ours) {
+      s.classList.toggle('ours', ours);
+      this.segs.forEach(g => { g.style.width = (ours && !g.classList.contains('keep') ? 0 : +g.dataset.v / 15360 * 100) + '%'; });
+      const h = $('#mHead', s), text = ours ? 'Что мы с ней сделали' : 'Сколько памяти занимала база';
+      if (h.textContent !== text) { h.style.opacity = 0; later(() => { h.textContent = text; h.style.opacity = 1; }, 250); }
+      const tot = $('#mTot', s); if (this.stopT) this.stopT();
+      this.stopT = tween(this.tot, ours ? 857 : 14345, 1300, v => { this.tot = v; tot.textContent = ru(Math.round(v)); });
+    },
+    enter(s) {
+      this.tot = 14345; $('#mTot', s).textContent = ru(14345); s.classList.remove('ours');
+      $('#mHead', s).textContent = 'Сколько памяти занимала база';
+      this.segs.forEach(g => { g.style.width = '0%'; });
+      later(() => this.set(s, false), 450);
+    },
+    step(s, k) { this.set(s, k >= 1); },
+    leave() { if (this.stopT) this.stopT(); }
+  };
+
+  /* 3 · how: the warehouse (host memory) and the table (GPU); each click plays one phase */
+  scenes.how = (() => {
+    const PH = [{ n: 28, dt: 300 }, { n: 19, dt: 190 }, { n: 28, dt: 340 }];
+    let g = null, raf = 0, last = 0, ph = 0, idx = 0, p = 0, hold = false, done = false;
+    const TW = 70, TH = 44, TG = 6, TY = 52, RX = 640, RW = 768;
+    const tile = j => ({ x: (j % 7) * (TW + TG), y: TY + Math.floor(j / 7) * (TH + TG), w: TW, h: TH });
+    const VW = (526 - 18 * 4) / 19, chunk = c => ({ x: c * (VW + 4), y: 300, w: VW, h: 44 });
+    const SW = (RW - 28) / 3, slot = k => ({ x: RX + k * (SW + 14), y: TY, w: SW, h: 96 });
+    const CW = (RW - 27 * 4) / 28, cell = j => ({ x: RX + j * (CW + 4), y: 196, w: CW, h: 46 });
+    const BW = (RW - 14) / 2, buf = b => ({ x: RX + b * (BW + 14), y: 300, w: BW, h: 44 });
+    const mid = r => [r.x + r.w / 2, r.y + r.h / 2];
+    function text(ctx, s, x, y, font, color, align = 'left') { ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align; ctx.fillText(s, x, y); ctx.textAlign = 'left'; }
+    function box(ctx, r, fill, stroke, lw = 1.5, rad = 8) { rr(ctx, r.x, r.y, r.w, r.h, rad); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); } }
+    function fly(ctx, a, b, k, color) {
+      const [x0, y0] = a, [x1, y1] = b, cx = (x0 + x1) / 2, cy = Math.min(y0, y1) - 70, e = easeInOut(Math.min(1, k));
+      const x = (1 - e) * (1 - e) * x0 + 2 * (1 - e) * e * cx + e * e * x1, y = (1 - e) * (1 - e) * y0 + 2 * (1 - e) * e * cy + e * e * y1;
+      ctx.save(); ctx.globalAlpha = .3; ctx.strokeStyle = color; ctx.setLineDash([3, 6]); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke(); ctx.restore();
+      ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = 14; rr(ctx, x - 13, y - 9, 26, 18, 5); ctx.fillStyle = color; ctx.fill(); ctx.restore();
+    }
+    function draw() {
+      const { ctx, w } = g; ctx.clearRect(0, 0, w, g.h);
+      const phase = done ? 'W' : 'FHB'[ph];
+      let L = -1, N = -1;
+      if (phase === 'F') { L = idx; N = idx + 1 < 28 && !hold ? idx + 1 : -1; }
+      if (phase === 'B') { L = 27 - idx; N = L - 1 >= 0 && !hold ? L - 1 : -1; }
+      text(ctx, 'Склад', 0, 24, `800 22px ${FD}`, C.ink); text(ctx, 'память процессора: 28 слоёв по 23 МБ', 86, 24, `500 16px ${FD}`, C.mut);
+      text(ctx, 'Стол', RX, 24, `800 22px ${FD}`, C.ink); text(ctx, 'видеокарта: три места для слоёв', RX + 64, 24, `500 16px ${FD}`, C.mut);
+      for (let j = 0; j < 28; j++) {
+        const r = tile(j), on = j === L, nx = j === N;
+        box(ctx, r, on ? C.tealD : C.bg2, on ? C.teal : (nx ? C.ora : C.line), on || nx ? 2 : 1);
+        text(ctx, String(j), r.x + r.w / 2, r.y + 28, `600 15px ${FD}`, on ? C.teal : (nx ? C.ora : C.mut), 'center');
+      }
+      text(ctx, 'словарь 151 936 × 1 536, 19 частей', 0, 286, `500 15px ${FD}`, C.mut);
+      for (let c = 0; c < 19; c++) {
+        const r = chunk(c); let f = C.bg2, st = C.line;
+        if (phase === 'H') { if (c === idx) { f = C.tealD; st = C.teal; } else if (c === idx + 1 && !hold) st = C.ora; else if (c < idx) f = C.bg3; }
+        box(ctx, r, f, st, st === C.line ? 1 : 2, 5);
+      }
+      for (let k = 0; k < 3; k++) {
+        const r = slot(k); let lab = 'свободно', who = '—', st = 'free';
+        if (L >= 0 && L % 3 === k) { st = 'run'; who = 'слой ' + L; lab = phase === 'F' ? 'считается' : 'пересчёт и градиенты'; }
+        else if (N >= 0 && N % 3 === k) { st = 'copy'; who = 'слой ' + N; lab = 'едет со склада'; }
+        const col = st === 'run' ? C.teal : (st === 'copy' ? C.ora : C.line);
+        box(ctx, r, st === 'run' ? C.tealD : C.bg2, col, st === 'free' ? 1 : 2, 10);
+        if (st === 'copy') { ctx.save(); rr(ctx, r.x, r.y, r.w, r.h, 10); ctx.clip(); ctx.fillStyle = C.oraD; ctx.fillRect(r.x, r.y, r.w * easeInOut(p), r.h); ctx.restore(); }
+        if (st === 'run') { ctx.fillStyle = C.teal; rr(ctx, r.x + 12, r.y + r.h - 12, (r.w - 24) * Math.min(1, p), 4, 2); ctx.fill(); }
+        text(ctx, who, r.x + 16, r.y + 42, `800 23px ${FD}`, st === 'free' ? C.mut : C.ink);
+        text(ctx, lab, r.x + 16, r.y + 70, `600 15px ${FD}`, st === 'free' ? C.mut : col);
+      }
+      text(ctx, 'на столе от каждого слоя остаётся только вход', RX, 184, `500 15px ${FD}`, C.mut);
+      for (let j = 0; j < 28; j++) {
+        const r = cell(j); box(ctx, r, C.bg2, C.line, 1, 4);
+        let fill = 0;
+        if (phase === 'F') fill = j < idx ? 1 : (j === idx ? Math.min(1, p) : 0);
+        else if (phase === 'H') fill = 1;
+        else if (phase === 'B') fill = j < L ? 1 : (j === L ? 1 - Math.min(1, p) : 0);
+        if (fill > 0) { ctx.fillStyle = C.teal; ctx.globalAlpha = .8; rr(ctx, r.x + 3, r.y + r.h - 3 - (r.h - 6) * fill, r.w - 6, (r.h - 6) * fill, 3); ctx.fill(); ctx.globalAlpha = 1; }
+      }
+      text(ctx, 'два места для кусков словаря по 8 192 строки', RX, 286, `500 15px ${FD}`, C.mut);
+      for (let b = 0; b < 2; b++) {
+        const r = buf(b); let lab = 'свободно', col = C.line, run = false, copy = false;
+        if (phase === 'H') {
+          if (idx % 2 === b) { run = true; col = C.teal; lab = `кусок ${idx + 1}: максимум, сумма, градиент`; }
+          else if (idx + 1 < 19 && !hold) { copy = true; col = C.ora; lab = `кусок ${idx + 2} едет`; }
+        }
+        box(ctx, r, run ? C.tealD : C.bg2, col, run || copy ? 2 : 1, 8);
+        if (copy) { ctx.save(); rr(ctx, r.x, r.y, r.w, r.h, 8); ctx.clip(); ctx.fillStyle = C.oraD; ctx.fillRect(r.x, r.y, r.w * easeInOut(p), r.h); ctx.restore(); }
+        text(ctx, lab, r.x + 14, r.y + 28, `600 15px ${FD}`, run ? C.teal : (copy ? C.ora : C.mut));
+      }
+      if (N >= 0) fly(ctx, mid(tile(N)), mid(slot(N % 3)), p, C.ora);
+      if (phase === 'H' && idx + 1 < 19 && !hold) fly(ctx, mid(chunk(idx + 1)), mid(buf((idx + 1) % 2)), p, C.ora);
+      ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, 384); ctx.lineTo(w, 384); ctx.stroke();
+      const say = {
+        F: ['Вперёд', `слой ${L}: RMSNorm → q, k, v + LoRA + RoPE → внимание → SwiGLU`],
+        H: ['Голова', `кусок ${idx + 1} из 19: логиты куска → максимум и сумма → градиент сразу`],
+        B: ['Назад', `слой ${L}: пересчёт из сохранённого входа → градиенты LoRA`],
+        W: ['Шаг готов', 'и так 64 раза. Пик за весь запуск — 857 МиБ']
+      }[phase];
+      text(ctx, say[0], 0, 432, `800 26px ${FD}`, C.teal);
+      ctx.font = `800 26px ${FD}`; const off = ctx.measureText(say[0]).width + 20;
+      text(ctx, say[1], off, 432, `500 21px ${FD}`, C.ink);
+      if (phase !== 'W') text(ctx, phase === 'B' ? 'клик — дальше' : 'клик — следующая часть шага', w, 432, `500 15px ${FD}`, C.mut, 'right');
+    }
+    function frame(t) {
+      const dt = last ? Math.min(60, t - last) : 0; last = t;
+      if (!hold) {
+        p += dt / PH[ph].dt;
+        while (p >= 1) {
+          if (idx + 1 >= PH[ph].n) { if (ph === 2) { done = true; } p = 1; hold = true; break; }
+          p -= 1; idx++;
+        }
+      }
+      draw(); raf = requestAnimationFrame(frame);
+    }
+    function start(k) { ph = Math.min(2, k); idx = 0; p = 0; hold = false; done = false; if (reduce) { idx = PH[ph].n - 1; p = 1; hold = true; done = ph === 2; } }
+    return {
+      enter(s) { g = prepCanvas($('#cvHow', s)); last = 0; start(0); raf = requestAnimationFrame(frame); },
+      step(s, k) { start(k); },
+      leave() { cancelAnimationFrame(raf); }
+    };
+  })();
+
+  /* 4 · kernel: one token's logits, block by block, in step with the real code */
+  scenes.kernel = (() => {
+    const NB = 8, BV = 8, SUB = [[74], [75, 76, 77], [78, 79, 80, 81], [82, 83, 84]], SUBDT = [650, 900, 1100, 800], HOLD = 2600;
+    let rnd = 20251031; const R = () => (rnd = (rnd * 16807) % 2147483647) / 2147483647;
+    const X = []; for (let b = 0; b < NB; b++) { const row = []; for (let j = 0; j < BV; j++) row.push(-2.5 + R() * 4.6 + (R() < .12 ? 1.2 : 0)); X.push(row); }
+    X[0][6] = 3.4; X[2][5] = 4.85; X[5][3] = 6.3; X[6][1] = 5.1;
+    const ST = []; { let m = -Infinity, s = 0, best = -Infinity, bi = 0;
+      for (let b = 0; b < NB; b++) {
+        const bm = Math.max(...X[b]), ba = X[b].indexOf(bm), nm = Math.max(m, bm), sc = m === -Infinity ? 0 : Math.exp(m - nm);
+        const part = X[b].reduce((a, x) => a + Math.exp(x - nm), 0), s2 = s * sc + part;
+        if (bm > best) { bi = b * BV + ba; best = bm; }
+        ST.push({ m0: m, s0: s, bm, nm, sc, part, s: s2, bi }); m = nm; s = s2;
+      } }
+    let g = null, raf = 0, last = 0, b = 0, sub = 0, p = 0, hold = 0, sec = null, lines = [];
+    const f2 = v => v === -Infinity ? '−∞' : v.toFixed(2), f3 = v => v.toFixed(3);
+    function readout() {
+      const st = ST[b]; let a = '', c = '';
+      if (hold > 0) { const L = ST[NB - 1]; a = `m = ${f2(L.nm)}   s = ${f3(L.s)}   lse = m + ln s = ${f3(L.nm + Math.log(L.s))}`; c = `все ${NB * BV} логитов пройдены, целиком в памяти их не было ни разу`; }
+      else if (sub === 0) { a = `блок ${b + 1} из ${NB}: ${BV} логитов загружены в регистры`; c = 'следующие блоки ещё не посчитаны'; }
+      else if (sub === 1) { a = `block_max = ${f2(st.bm)}   new_m = max(${f2(st.m0)}, ${f2(st.bm)}) = ${f2(st.nm)}`; c = st.nm > st.m0 ? 'максимум вырос' : 'максимум прежний'; }
+      else if (sub === 2) { a = b === 0 ? `s = ${f3(st.part)}` : `s = ${f3(st.s0)} · ${f3(st.sc)} + ${f3(st.part)} = ${f3(st.s)}`; c = b === 0 ? 'первая сумма' : (st.sc < 1 ? `rescale = e^(${f2(st.m0)} − ${f2(st.nm)}) = ${f3(st.sc)}` : 'rescale = 1, максимум прежний'); }
+      else { a = `m = ${f2(st.nm)}   best = слово ${st.bi}`; c = 'переходим к следующему блоку'; }
+      $('#kRead', sec).innerHTML = `${a}<br><span class="mut">${c}</span>`;
+    }
+    function draw() {
+      const { ctx, w } = g; ctx.clearRect(0, 0, w, g.h);
+      const top = 26, bot = 280, lo = -3, hi = 7.5, y = v => bot - (v - lo) / (hi - lo) * (bot - top);
+      const bw = w / NB, cw = (bw - 10) / BV;
+      ctx.font = `500 14px ${FD}`; ctx.fillStyle = C.mut; ctx.fillText('логиты одного токена, блок за блоком', 0, 14);
+      for (let k = 0; k < NB; k++) {
+        const x0 = k * bw + 5, cur = k === b && hold === 0, dn = k < b || hold > 0;
+        if (cur) { rr(ctx, x0 - 4, top - 6, bw - 2, bot - top + 12, 8); ctx.fillStyle = C.tealD; ctx.fill(); }
+        for (let j = 0; j < BV; j++) {
+          const v = X[k][j]; let hgt = bot - y(v), col = C.line;
+          if (dn) col = C.ink2; if (cur) { col = C.teal; if (sub === 0) hgt *= easeOut(Math.min(1, p * 1.3)); }
+          if (!dn && !cur) ctx.globalAlpha = .45;
+          ctx.fillStyle = col; rr(ctx, x0 + j * cw, bot - hgt, Math.max(1, cw - 2), hgt, 2); ctx.fill(); ctx.globalAlpha = 1;
+        }
+        ctx.font = `600 13px ${FD}`; ctx.fillStyle = cur ? C.teal : C.mut; ctx.textAlign = 'center'; ctx.fillText(String(k + 1), x0 + (bw - 10) / 2, bot + 22); ctx.textAlign = 'left';
+      }
+      const st = ST[b]; let m = hold > 0 ? ST[NB - 1].nm : (sub === 0 ? st.m0 : (sub === 1 ? st.m0 + (st.nm - st.m0) * easeInOut(p) : st.nm));
+      if (b === 0 && sub <= 1 && hold === 0) m = sub === 1 ? st.nm : -Infinity;
+      if (isFinite(m)) {
+        ctx.strokeStyle = C.ora; ctx.setLineDash([8, 6]); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, y(m)); ctx.lineTo(w, y(m)); ctx.stroke(); ctx.setLineDash([]);
+        ctx.font = `700 15px ${FD}`; ctx.fillStyle = C.ora; ctx.textAlign = 'right'; ctx.fillText('m = ' + f2(m), w, y(m) - 9); ctx.textAlign = 'left';
+      }
+      ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, bot + .5); ctx.lineTo(w, bot + .5); ctx.stroke();
+      const hl = hold > 0 ? [] : SUB[sub]; lines.forEach(l => l.classList.toggle('hl', hl.includes(+l.dataset.n)));
+      readout();
+    }
+    function advance() { if (hold > 0) { hold = 0; b = 0; sub = 0; } else { sub++; if (sub >= SUB.length) { sub = 0; b++; if (b >= NB) { b = NB - 1; sub = 3; hold = 1; } } } p = 0; }
+    function frame(t) {
+      const dt = last ? Math.min(60, t - last) : 0; last = t;
+      if (hold > 0) { hold += dt; if (hold > HOLD) advance(); } else { p += dt / SUBDT[sub]; if (p >= 1) advance(); }
+      draw(); raf = requestAnimationFrame(frame);
+    }
+    return {
+      init(s) { sec = s; lines = $$('.ln', s); },
+      enter(s) { g = prepCanvas($('#cvKer', s)); b = 0; sub = 0; p = 0; hold = 0; last = 0; if (reduce) { b = 5; sub = 2; p = 1; draw(); return; } raf = requestAnimationFrame(frame); },
+      leave() { cancelAnimationFrame(raf); }
+    };
+  })();
+
+  /* 5 · results: memory after every change (real runs), numbers roll from the base */
+  (() => {
+    const WF = [['база', 14345], ['SwiGLU', 12385], ['RMSNorm', 12383], ['NF4, fp16', 10343], ['словарь', 6785], ['без паддинга', 6705], ['внимание', 5525], ['эмбеддинг', 4625], ['компиляция', 4503], ['lm_head', 4243], ['пересчёт MLP', 2983], ['пересчёт слоёв', 1761], ['веса на CPU', 1343], ['при загрузке', 793], ['итог', 857]];
+    const svg = $('#chMem'), n = WF.length;
+    const A = axes(svg, { x: 78, y: 14, w: 750, h: 300, xr: [0, n], yr: [0, 16000], yt: [0, 4000, 8000, 12000, 16000], yf: v => ru(v), grid: true, yl: 'МиБ', ylo: 64 });
+    E('line', { x1: 78, x2: 828, y1: A.sy(15360), y2: A.sy(15360), stroke: '#9A9A9A', 'stroke-width': 1, 'stroke-dasharray': '6 4' }, A.g);
+    T(A.g, 824, A.sy(15360) - 7, 'T4: 15 360', { class: 'vl', 'text-anchor': 'end', fill: '#BDBDBD' });
+    WF.forEach(([name, v], i) => {
+      const xc = A.sx(i + .5), w = 32, col = i === 0 ? '#FA8174' : (i === n - 1 ? '#8DD3C7' : '#81B1D2');
+      E('rect', { x: xc - w / 2, y: A.sy(v), width: w, height: A.sy(0) - A.sy(v), fill: col, class: 'bar', style: `transition-delay:${300 + i * 70}ms` }, A.g);
+      T(A.g, xc, A.sy(v) - 6, ru(v), { class: 'vl lag', 'text-anchor': 'middle', style: `font-size:11.5px;transition-delay:${1000 + i * 70}ms` });
+      T(svg, xc + 5, 336, name, { class: 'tl', 'text-anchor': 'end', transform: `rotate(-40 ${xc + 5} 336)` });
+    });
+  })();
+  scenes.results = {
+    enter(s) {
+      const t = $('#rT', s), m = $('#rM', s); t.textContent = ru(86, 1); m.textContent = ru(14345);
+      later(() => { tween(86, 57.3, 1800, v => { t.textContent = ru(v, 1); }); tween(14345, 857, 2200, v => { m.textContent = ru(Math.round(v)); }); }, 900);
+    }
+  };
+
+  scenes.profiles = {
+    enter(s) {
+      const nums = $$('.pn b', s);
+      nums.forEach(n => { n.textContent = ru(+n.dataset.from, +n.dataset.dec); });
+      later(() => nums.forEach(n => { const d = +n.dataset.dec; tween(+n.dataset.from, +n.dataset.to, 1800, v => { n.textContent = ru(v, d); }); }), 700);
+    }
+  };
+
+  /* 6 · quality: the real loss curves of base_1 and solution_1 */
+  (() => {
+    const B1 = [2.0589, 2.6291, 2.4968, 2.3943, 2.2734, 2.5373, 2.5765, 2.2213, 1.698, 2.4205, 2.7105, 1.2992, 1.9806, 1.919, 2.0236, 1.4786, 1.5754, 2.001, 2.2244, 2.0641, 2.2079, 2.0892, 2.141, 1.8532, 2.3843, 2.4332, 2.3029, 1.6364, 1.898, 1.5732, 1.3819, 1.9844, 2.1548, 1.9331, 1.9915, 2.3977, 1.852, 1.9289, 1.9245, 1.8814, 2.3725, 2.184, 2.0424, 1.6504, 0.8659, 2.261, 2.306, 2.0808, 2.2193, 2.427, 2.3683, 1.5771, 2.0724, 2.1997, 1.5544, 2.4057, 1.9993, 2.0496, 2.2215, 2.168, 2.2905, 2.0996, 1.6933, 2.0091];
+    const S1 = [2.0593, 2.6295, 2.4974, 2.3941, 2.2734, 2.5368, 2.5762, 2.2212, 1.6977, 2.4204, 2.71, 1.2992, 1.9805, 1.9189, 2.0236, 1.4787, 1.5759, 2.0009, 2.2238, 2.0639, 2.2079, 2.0893, 2.1409, 1.8529, 2.3843, 2.433, 2.3031, 1.6368, 1.8978, 1.5724, 1.3819, 1.9842, 2.1549, 1.9329, 1.9917, 2.3978, 1.8513, 1.9287, 1.9247, 1.8815, 2.3722, 2.184, 2.0424, 1.65, 0.866, 2.2609, 2.3059, 2.0808, 2.2192, 2.4263, 2.3681, 1.5775, 2.072, 2.1995, 1.554, 2.4056, 1.9993, 2.0497, 2.2217, 2.1681, 2.2908, 2.0998, 1.6932, 2.0091];
+    const svg = $('#chLoss');
+    const A = axes(svg, { x: 64, y: 12, w: 826, h: 330, xr: [1, 64], yr: [0.7, 2.9], xt: [1, 8, 16, 24, 32, 40, 48, 56, 64], yt: [1.0, 1.5, 2.0, 2.5], yf: v => ru(v, 1), grid: true, xl: 'шаг обучения', yl: 'loss', ylo: 46 });
+    const path = d => d.map((v, i) => (i ? 'L' : 'M') + A.sx(i + 1).toFixed(1) + ',' + A.sy(v).toFixed(1)).join(' ');
+    E('path', { d: path(B1), stroke: '#FA8174', 'stroke-width': 5, 'stroke-linejoin': 'round', class: 'ln2', pathLength: 1, style: 'transition-delay:.4s' }, A.g);
+    E('path', { d: path(S1), stroke: '#8DD3C7', 'stroke-width': 1.8, 'stroke-linejoin': 'round', class: 'ln2', pathLength: 1, style: 'transition-delay:1.6s' }, A.g);
+    const lg = E('g', { class: 'lag', style: 'transition-delay:1.2s' }, svg);
+    E('rect', { x: 76, y: 262, width: 262, height: 66, rx: 4, fill: '#0F0F10', stroke: '#5A5A5E' }, lg);
+    [['база, base_1', '#FA8174', 5], ['наше решение, solution_1', '#8DD3C7', 1.8]].forEach(([s, c, lw], k) => {
+      const yy = 284 + k * 24; E('line', { x1: 88, x2: 118, y1: yy, y2: yy, stroke: c, 'stroke-width': lw }, lg); T(lg, 128, yy + 5, s, { class: 'tl' });
+    });
+  })();
+
+  /* navigation: → / click plays the next build, then the next slide */
+  const slides = $$('.slide');
+  slides.forEach(s => { const sc = scenes[s.dataset.id]; if (sc && sc.init) sc.init(s); });
+  let cur = -1, step = 0;
+  function go(i) {
+    i = Math.max(0, Math.min(slides.length - 1, i)); if (i === cur) return;
+    clearAll();
+    const prev = slides[cur];
+    if (prev) { prev.classList.remove('on'); prev.classList.toggle('gone', i > cur); const ps = scenes[prev.dataset.id]; if (ps && ps.leave) ps.leave(prev); }
+    cur = i; step = 0; const s = slides[i];
+    s.classList.remove('gone'); void s.offsetWidth; s.classList.add('on');
+    $('#pg').textContent = `${i + 1} / ${slides.length}`;
+    const sc = scenes[s.dataset.id]; if (sc && sc.enter) sc.enter(s);
+    try { if (location.hash.slice(1) !== s.dataset.id) history.replaceState(null, '', '#' + s.dataset.id); } catch (e) { /* the hash is only a convenience */ }
+  }
+  function setStep(k) { step = k; const s = slides[cur], sc = scenes[s.dataset.id]; if (sc && sc.step) sc.step(s, k); }
+  function next() { if (step < +slides[cur].dataset.steps) setStep(step + 1); else go(cur + 1); }
+  function prev() { if (step > 0) setStep(step - 1); else go(cur - 1); }
+  addEventListener('keydown', e => {
+    const k = e.key;
+    if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'Enter') { e.preventDefault(); next(); }
+    else if (k === 'ArrowLeft' || k === 'PageUp' || k === 'Backspace') { e.preventDefault(); prev(); }
+    else if (k === 'Home') go(0);
+    else if (k === 'End') go(slides.length - 1);
+    else if (k === 'f' || k === 'F') {
+      const d = document;
+      if (d.fullscreenElement) { if (d.exitFullscreen) d.exitFullscreen().catch(() => {}); }
+      else if (d.documentElement.requestFullscreen) d.documentElement.requestFullscreen().catch(() => {});
+    }
+  });
+  stage.addEventListener('click', e => {
+    if (e.target.closest('a')) return;
+    const r = stage.getBoundingClientRect();
+    if (e.clientX - r.left < r.width / 4) prev(); else next();
+  });
+  let tx = null, ty = null;
+  stage.addEventListener('touchstart', e => { if (e.target.closest('#stk')) { tx = null; return; } tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  stage.addEventListener('touchend', e => {
+    if (tx === null) return; const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty; tx = null;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) { e.preventDefault(); if (dx < 0) next(); else prev(); }
+  });
+  const fromHash = () => { const i = slides.findIndex(s => '#' + s.dataset.id === location.hash); return i < 0 ? 0 : i; };
+  addEventListener('hashchange', () => { const i = fromHash(); if (i !== cur) go(i); });
+  go(fromHash());
+})();
+</script>
+</body>
+</html>
